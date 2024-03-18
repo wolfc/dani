@@ -55,13 +55,7 @@ public class ToolsExecutingChatModel implements ChatLanguageModel {
         LOGGER.fine("messages = " + messages);
         if (toolSpecifications != null && toolSpecifications.size() > 0 && noToolExecutionResultsIn(messages)) {
             // Inspired by https://github.com/instruct-lab/taxonomy/pull/221 and with the help of its author Hemslo Wang
-            final String systemMessageText = "Given the following tools:\n" +
-                    "\n" +
-                    gson.toJson(toolSpecifications) +
-                    "\n" +
-                    "Select all suitable tools for the given input, respond with a valid JSON array. If no tool is suitable, respond with an empty JSON array. Do not give any other form of answer or explanation.\n\n" +
-                    "With the response adhering to the following JSON schema:\n" +
-                    "\n" +
+            final String systemMessageText = "You are a tool evaluator which MUST always respond with a JSON array of applicable tools adhering to the following schema:" +
                     "{\n" +
                     "  \"type\": \"array\",\n" +
                     "  \"items\": [\n" +
@@ -78,7 +72,7 @@ public class ToolsExecutingChatModel implements ChatLanguageModel {
                     "        },\n" +
                     "        \"arguments\": {\n" +
                     "          \"type\": \"string\"\n" +
-                    "          \"description\": \"The arguments to pass to the tool as stringified JSON object\"\n" +
+                    "          \"description\": \"The stringified map with arguments to pass to the tool\"\n" +
                     "        }\n" +
                     "      },\n" +
                     "      \"required\": [\n" +
@@ -87,7 +81,10 @@ public class ToolsExecutingChatModel implements ChatLanguageModel {
                     "      ]\n" +
                     "    }\n" +
                     "  ]\n" +
-                    "}";
+                    "}\n" +
+                    "\nYou may only choose from the following tools:\n" +
+                    gson.toJson(toolSpecifications) + "\n" +
+                    "If no tools are applicable respond only with an empty JSON array. NEVER respond with any other form of answer or explanation, just respond with an empty JSON array.";
             final List<ChatMessage> assistantMessages = new ArrayList<>();
             assistantMessages.add(SystemMessage.from(systemMessageText));
             for (ChatMessage msg : messages) {
@@ -95,29 +92,50 @@ public class ToolsExecutingChatModel implements ChatLanguageModel {
                     assistantMessages.add(msg);
                 }
             }
-            LOGGER.fine("assistantMessage = " + assistantMessages);
-            final Response<AiMessage> response = toolsAssistant.generate(assistantMessages);
-            // sometimes you get strings quoted with ` instead of ".
-            final String responseText = response.content().text().replace("`", "'");
-            LOGGER.fine("responseText = " + responseText);
-            final List<ToolExecutionRequest> executionRequests = gson.fromJson(responseText, listType);
-            if (executionRequests != null && executionRequests.size() > 0) {
-                return new Response<>(AiMessage.aiMessage(executionRequests), response.tokenUsage(), response.finishReason());
+            Response<AiMessage> response;
+            String responseText;
+            RuntimeException exception = null;
+            for (int retries = 0; retries < 3; retries++) {
+                LOGGER.fine("assistantMessage = " + assistantMessages);
+                response = toolsAssistant.generate(assistantMessages);
+                // sometimes you get strings quoted with ` instead of ".
+                responseText = response.content().text().replace("`", "'");
+                LOGGER.fine("responseText = " + responseText);
+                try {
+                    // TODO: sometimes the one parameter is given as a string as opposed to a stringified map, this
+                    // results in an error from ToolExecutionRequestUtil::argumentsAsMap
+                    // So it might be prudent to do some more sanitizing.
+                    final List<ToolExecutionRequest> executionRequests = gson.fromJson(responseText, listType);
+                    if (executionRequests != null && executionRequests.size() > 0) {
+                        return new Response<>(AiMessage.aiMessage(executionRequests), response.tokenUsage(), response.finishReason());
+                    }
+                    exception = null;
+                    break;
+                } catch (RuntimeException e) {
+                    LOGGER.warning("Error: " + e.getMessage());
+                    assistantMessages.add(response.content());
+                    assistantMessages.add(UserMessage.from("Error: " + e.getMessage() + "\nTry again. If there are no applicable tools respond only with an empty JSON array."));
+                    exception = e;
+                }
             }
+            if (exception != null) throw exception;
         }
         {
             // this is just a hacky result generator because currently the lab AI engine fails with:
             // Exception: can only concatenate str (not "NoneType") to str
-            final String systemMessageText = "Given the following tools:\n" +
-                    gson.toJson(toolSpecifications) +
-                    "\n\n" +
-                    "And the following tool execution requests:\n" +
-                    gson.toJson(messages.stream().filter(AiMessage.class::isInstance).map(AiMessage.class::cast).map(m -> m.toolExecutionRequests()).flatMap(Collection::stream).collect(Collectors.toList())) +
-                    "\n\n" +
-                    "And the following tool execution results:\n" +
-                    gson.toJson(messages.stream().filter(ToolExecutionResultMessage.class::isInstance).collect(Collectors.toList()));
             final List<ChatMessage> newMessages = new ArrayList<>();
-            newMessages.add(SystemMessage.from(systemMessageText));
+            final List<ChatMessage> executionResultMessages = messages.stream().filter(ToolExecutionResultMessage.class::isInstance).collect(Collectors.toList());
+            if (executionResultMessages.size() > 0) {
+                final String systemMessageText = "Given the following tools:\n" +
+                        gson.toJson(toolSpecifications) +
+                        "\n\n" +
+                        "And the following tool execution requests:\n" +
+                        gson.toJson(messages.stream().filter(AiMessage.class::isInstance).map(AiMessage.class::cast).map(m -> m.toolExecutionRequests()).flatMap(Collection::stream).collect(Collectors.toList())) +
+                        "\n\n" +
+                        "And the following tool execution results:\n" +
+                        gson.toJson(executionResultMessages);
+                newMessages.add(SystemMessage.from(systemMessageText));
+            }
             newMessages.addAll(messages.stream().filter(UserMessage.class::isInstance).collect(Collectors.toList()));
             LOGGER.fine("newMessages = " + newMessages);
             return delegate.generate(newMessages);

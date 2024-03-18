@@ -6,8 +6,11 @@ import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import dev.langchain4j.service.AiServices;
 
+import java.text.DateFormat;
 import java.time.Duration;
+import java.util.Date;
 import java.util.Random;
+import java.util.TimeZone;
 import java.util.logging.ConsoleHandler;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -21,6 +24,13 @@ public class InstructLabAiServiceTest {
             final long balance = new Random().nextLong(1000000L);
             LOGGER.info("** Balance for account number " + accountNumber + " is " + balance);
             return balance;
+        }
+        @Tool("Returns the current time for a given timezone")
+        String getCurrentTimeOf(@P("time zone") final String timeZone) {
+            LOGGER.info("** current time of " + timeZone);
+            final DateFormat fmt = DateFormat.getDateTimeInstance(DateFormat.FULL, DateFormat.FULL);
+            fmt.setTimeZone(TimeZone.getTimeZone(timeZone));
+            return fmt.format(new Date());
         }
     }
 
@@ -47,8 +57,11 @@ public class InstructLabAiServiceTest {
                 .chatMemory(MessageWindowChatMemory.withMaxMessages(10))
                 .build();
 
-        String question = "What is the current balance of account number 8954325?";
+        //String question = "What is the current balance of account number 8954325?";
         //String question = "What is your name?";
+        String question = "What is the current time in Athens?";
+        //String question = "What are you?";
+        //String question = "What is the capital of Canada?";
 
         System.out.println("> " + question);
 
