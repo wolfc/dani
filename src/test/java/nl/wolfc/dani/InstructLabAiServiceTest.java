@@ -40,6 +40,7 @@ public class InstructLabAiServiceTest {
     }
 
     public static void main(final String[] args) {
+        final String baseUrl = args.length > 0 ? args[0] : "http://localhost:8000/v1";
         final Logger logger = Logger.getLogger(ToolsExecutingChatModel.class.getName());
         logger.setLevel(Level.FINE);
         final ConsoleHandler handler = new ConsoleHandler();
@@ -48,7 +49,7 @@ public class InstructLabAiServiceTest {
 
         final OpenAiChatModel.OpenAiChatModelBuilder builder = OpenAiChatModel.builder()
                 .apiKey("not needed")
-                .baseUrl("http://localhost:8000/v1")
+                .baseUrl(baseUrl)
                 .timeout(Duration.ofSeconds(120));
         final ToolsExecutingChatModel executingChatModel = new ToolsExecutingChatModel(builder.build(), builder.build());
         Assistant assistant = AiServices.builder(Assistant.class)
