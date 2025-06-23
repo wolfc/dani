@@ -99,7 +99,10 @@ public class ToolsExecutingChatModel implements ChatLanguageModel {
                 LOGGER.fine("assistantMessage = " + assistantMessages);
                 response = toolsAssistant.generate(assistantMessages);
                 // sometimes you get strings quoted with ` instead of ".
-                responseText = response.content().text().replace("`", "'");
+                responseText = response.content().text().replace("`", "'")
+                        // Gemini likes to return it as Markdown code block
+                        .replace("'''json", "")
+                        .replace("'''", "");
                 LOGGER.fine("responseText = " + responseText);
                 try {
                     // TODO: sometimes the one parameter is given as a string as opposed to a stringified map, this
