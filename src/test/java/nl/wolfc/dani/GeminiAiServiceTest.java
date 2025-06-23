@@ -40,7 +40,6 @@ public class GeminiAiServiceTest {
         @Tool("Returns the current balance for the given account number")
         long getBalanceOf(@P("account number") final String accountNumber) {
             final long balance = new Random().nextLong(1000000L);
-            new Exception("getBalanceOf").printStackTrace();
             LOGGER.info("** Balance for account number " + accountNumber + " is " + balance);
             return balance;
         }
@@ -49,7 +48,6 @@ public class GeminiAiServiceTest {
     static class TimeChecker {
         @Tool("Returns the current time for a given timezone")
         String getCurrentTimeOf(@P("time zone") final String timeZone) {
-            new Exception("HERE").printStackTrace();
             LOGGER.info("** current time of " + timeZone);
             final DateFormat fmt = DateFormat.getDateTimeInstance(DateFormat.FULL, DateFormat.FULL);
             fmt.setTimeZone(TimeZone.getTimeZone(timeZone));
@@ -61,7 +59,6 @@ public class GeminiAiServiceTest {
         @Tool("Return the users identity")
         String getCallerPrincipal() {
             final Principal p = SecurityContext.currentPrincipal.get().peek();
-            new Exception("getCallerPrincipal " + p).printStackTrace();
             return p == null ? null : p.getName();
         }
     }
