@@ -10,6 +10,7 @@ import dev.langchain4j.service.AiServices;
 import dev.langchain4j.service.tool.DefaultToolExecutor;
 import dev.langchain4j.service.tool.ToolExecutor;
 
+import javax.annotation.security.RolesAllowed;
 import java.lang.reflect.Method;
 import java.security.Principal;
 import java.text.DateFormat;
@@ -32,11 +33,12 @@ public class GeminiAiServiceTest {
     private static final Logger LOGGER = Logger.getLogger(GeminiAiServiceTest.class.getName());
 
     static class SecurityContext {
-        static final ThreadLocal<Queue<Principal>> currentPrincipal = ThreadLocal.withInitial(() -> new LinkedList<>());
+        static final ThreadLocal<Queue<SecuredToolExecutor.Context>> currentContext = ThreadLocal.withInitial(() -> new LinkedList<>());
     }
 
     static class AccountChecker {
-        @SecuredToolExecutor.PrincipalsAllowed("Bob")
+        //@SecuredToolExecutor.PrincipalsAllowed("Bob")
+        @RolesAllowed("admin")
         @Tool("Returns the current balance for the given account number")
         long getBalanceOf(@P("account number") final String accountNumber) {
             final long balance = new Random().nextLong(1000000L);
@@ -58,7 +60,7 @@ public class GeminiAiServiceTest {
     static class RuntimeContext {
         @Tool("Return the users identity")
         String getCallerPrincipal() {
-            final Principal p = SecurityContext.currentPrincipal.get().peek();
+            final Principal p = SecurityContext.currentContext.get().peek().currentPrincipal();
             return p == null ? null : p.getName();
         }
     }
@@ -84,7 +86,7 @@ public class GeminiAiServiceTest {
         final Method method = objectWithTool.getClass().getDeclaredMethod("getCallerPrincipal");
         Assistant assistant = AiServices.builder(Assistant.class)
                 .chatLanguageModel(executingChatModel)
-                .tools(toolsMap((o, m) -> new SecuredToolExecutor(() -> SecurityContext.currentPrincipal.get().peek(), o, m), new AccountChecker()))
+                .tools(toolsMap((o, m) -> new SecuredToolExecutor(() -> SecurityContext.currentContext.get().peek(), o, m), new AccountChecker()))
                 .tools(new TimeChecker())
                 .tools(Map.of(ToolSpecifications.toolSpecificationFrom(method), new DefaultToolExecutor(objectWithTool, method)))
                 .chatMemory(MessageWindowChatMemory.withMaxMessages(10))
@@ -95,7 +97,17 @@ public class GeminiAiServiceTest {
         //String question = "What is the current time in Athens?";
         //String question = "What are you?";
         //String question = "What is the capital of Canada?";
-        SecurityContext.currentPrincipal.get().add(() -> "Bob");
+        SecurityContext.currentContext.get().add(new SecuredToolExecutor.Context() {
+            @Override
+            public Principal currentPrincipal() {
+                return () -> "Bob";
+            }
+
+            @Override
+            public String[] currentRoles() {
+                return new String[] { "admin" };
+            }
+        });
         //String question = "Who am I?";
         String question = "What is the balance of account #1234?";
 
